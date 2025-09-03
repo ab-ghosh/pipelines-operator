@@ -154,6 +154,11 @@ spec:
               echo "--- Remote Resolvers Deployment ---"
               oc describe deployment tekton-pipelines-remote-resolvers -n tekton-pipelines || echo "Remote resolvers deployment not found"
               
+              # Create target namespace if it doesn't exist (fix for namespace creation issue)
+              echo "--- Ensuring target namespace exists ---"
+              oc create namespace openshift-pipelines --dry-run=client -o yaml | oc apply -f - || echo "Namespace already exists or creation failed"
+              oc wait --for=condition=Ready namespace/openshift-pipelines --timeout=60s || echo "Namespace not ready within 60s"
+              
               # Check if TektonConfig is ready, restart operator if not (workaround for known issue)
               if ! oc wait --for=condition=Ready=true tektonconfig.operator.tekton.dev/config --timeout=60s; then
                 echo "--- TektonConfig not ready, applying workaround by restarting operator ---"
