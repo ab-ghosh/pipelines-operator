@@ -137,9 +137,34 @@ spec:
               echo "--- Operator Logs (last 50 lines) ---"
               oc logs -n openshift-operators deployment/openshift-pipelines-operator --tail=50 || echo "No operator logs available"
               
-              # Wait a bit more for operator to stabilize
-              echo "--- Waiting 2 minutes for operator to stabilize ---"
-              sleep 120
+              # Wait longer for operator and TektonConfig to stabilize
+              echo "--- Waiting 5 minutes for operator to stabilize ---"
+              sleep 300
+              
+              # Additional debugging for TektonConfig and TektonPipeline
+              echo "--- TektonConfig Status (Detailed) ---"
+              oc get tektonconfig config -o yaml || echo "TektonConfig not found"
+              
+              echo "--- TektonPipeline Status ---"
+              oc get tektonpipeline -A || echo "No TektonPipeline found"
+              
+              echo "--- Tekton Pods Status ---"
+              oc get pods -n tekton-pipelines || echo "No tekton-pipelines namespace"
+              
+              echo "--- Remote Resolvers Deployment ---"
+              oc describe deployment tekton-pipelines-remote-resolvers -n tekton-pipelines || echo "Remote resolvers deployment not found"
+              
+              # Check if TektonConfig is ready, restart operator if not (workaround for known issue)
+              if ! oc wait --for=condition=Ready=true tektonconfig.operator.tekton.dev/config --timeout=60s; then
+                echo "--- TektonConfig not ready, applying workaround by restarting operator ---"
+                oc delete pod -n openshift-operators -l app=openshift-pipelines-operator || echo "Failed to restart operator"
+                echo "--- Waiting additional 3 minutes after operator restart ---"
+                sleep 180
+                echo "--- Final TektonConfig status check ---"
+                oc get tektonconfig config -o yaml | grep -A 20 "status:" || echo "TektonConfig status unavailable"
+              else
+                echo "--- TektonConfig is ready ---"
+              fi
               
               # Run the original test
               gauge run --tags="" --log-level=debug --verbose specs/konflux-olm.spec
