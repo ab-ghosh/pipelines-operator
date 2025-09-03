@@ -270,9 +270,18 @@ spec:
                   image: $INDEX_IMAGE
                   displayName: "Custom OSP Nightly"
                   publisher: Red Hat Local
+                  grpcPodConfig:
+                    resources:
+                      requests:
+                        memory: "256Mi"
+                        cpu: "100m"
+                      limits:
+                        memory: "1Gi"
+                        cpu: "500m"
+                    securityContextConfig: restricted
                   updateStrategy:
-                  registryPoll:
-                  interval: 30m
+                    registryPoll:
+                      interval: 30m
               EOF
           - name: create-subscription
             env:
@@ -308,21 +317,40 @@ spec:
               
               echo "Subscription created successfully"
               
+              # Wait for catalog source to be ready
+              echo "Waiting for catalog source to be ready..."
+              sleep 30
+              
+              # Check catalog source status first
+              echo "=== Catalog Source Status ==="
+              oc get catalogsource custom-osp-nightly -n openshift-marketplace -o yaml || echo "Failed to get catalog source"
+              
               # Wait for subscription to show some status
               echo "Waiting for subscription to initialize..."
-              sleep 30
+              sleep 60
               
               # Check subscription status
               echo "=== Subscription Status ==="
               oc get subscription openshift-pipelines-operator -n openshift-operators -o yaml || echo "Failed to get subscription"
               
+              # Check for InstallPlan
+              echo "=== InstallPlans ==="
+              oc get installplan -n openshift-operators | grep pipelines || echo "No pipelines install plan found yet"
+              
               # Check if CSV is being created
               echo "=== ClusterServiceVersions ==="
               oc get csv -n openshift-operators | grep pipelines || echo "No pipelines CSV found yet"
               
-              # Check catalog source pods
+              # Check catalog source pods and logs
               echo "=== Catalog Source Pods ==="
               oc get pods -n openshift-marketplace | grep custom-osp-nightly || echo "No catalog source pods found"
+              
+              # Get catalog source pod logs for debugging
+              CATALOG_POD=$(oc get pods -n openshift-marketplace -o name | grep custom-osp-nightly | head -1)
+              if [ ! -z "$CATALOG_POD" ]; then
+                echo "=== Catalog Source Pod Logs (last 20 lines) ==="
+                oc logs -n openshift-marketplace $CATALOG_POD --tail=20 || echo "Failed to get catalog pod logs"
+              fi
               
               echo "=== Deploy-operator step completed ==="
     - name: e2e-test-pipelines
