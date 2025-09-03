@@ -110,6 +110,38 @@ spec:
                     name: github
                     optional: true
             script: |
+              # Debug operator installation before running tests
+              echo "=== Debugging Operator Installation ==="
+              
+              # Check if operator is running
+              echo "--- Operator Pods ---"
+              oc get pods -n openshift-operators | grep pipelines || echo "No pipelines operator pods found"
+              
+              # Check subscription status
+              echo "--- Subscription Status ---"
+              oc get subscription openshift-pipelines-operator -n openshift-operators -o yaml || echo "Subscription not found"
+              
+              # Check catalog source
+              echo "--- Catalog Source ---"
+              oc get catalogsource custom-osp-nightly -n openshift-marketplace -o yaml || echo "Catalog source not found"
+              
+              # Check InstallPlan
+              echo "--- Install Plans ---"
+              oc get installplan -n openshift-operators | grep pipelines || echo "No pipelines install plans found"
+              
+              # Check for any TektonConfig
+              echo "--- TektonConfig Status ---"
+              oc get tektonconfig -A || echo "No TektonConfig found"
+              
+              # Check operator logs if available
+              echo "--- Operator Logs (last 50 lines) ---"
+              oc logs -n openshift-operators deployment/openshift-pipelines-operator --tail=50 || echo "No operator logs available"
+              
+              # Wait a bit more for operator to stabilize
+              echo "--- Waiting 2 minutes for operator to stabilize ---"
+              sleep 120
+              
+              # Run the original test
               gauge run --tags="" --log-level=debug --verbose specs/konflux-olm.spec
               echo "$KUBECONFIG_PATH" > $(results.kubeconfig-path.path)
     - name: provision-eaas-space
@@ -248,7 +280,20 @@ spec:
                 value: "/credentials/$(steps.get-kubeconfig.results.kubeconfig)"
             script: |
               #!/usr/bin/env bash
+              set -x  # Enable debug output
+              
+              echo "=== Creating OpenShift Pipelines Subscription ==="
+              
+              # Delete existing subscription if any
+              echo "Cleaning up existing subscription..."
               oc delete subscription openshift-pipelines-operator -n openshift-operators || true
+              
+              # Wait briefly for cleanup
+              echo "Waiting 10 seconds for cleanup..."
+              sleep 10
+              
+              # Create new subscription
+              echo "Creating new subscription..."
               cat <<EOF | oc apply -f-
                 apiVersion: operators.coreos.com/v1alpha1
                 kind: Subscription
@@ -260,6 +305,26 @@ spec:
                   source: "custom-osp-nightly"
                   sourceNamespace: openshift-marketplace
               EOF
+              
+              echo "Subscription created successfully"
+              
+              # Wait for subscription to show some status
+              echo "Waiting for subscription to initialize..."
+              sleep 30
+              
+              # Check subscription status
+              echo "=== Subscription Status ==="
+              oc get subscription openshift-pipelines-operator -n openshift-operators -o yaml || echo "Failed to get subscription"
+              
+              # Check if CSV is being created
+              echo "=== ClusterServiceVersions ==="
+              oc get csv -n openshift-operators | grep pipelines || echo "No pipelines CSV found yet"
+              
+              # Check catalog source pods
+              echo "=== Catalog Source Pods ==="
+              oc get pods -n openshift-marketplace | grep custom-osp-nightly || echo "No catalog source pods found"
+              
+              echo "=== Deploy-operator step completed ==="
     - name: e2e-test-pipelines
       runAfter:
         - setup-test-environment
