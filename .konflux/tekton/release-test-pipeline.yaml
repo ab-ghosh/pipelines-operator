@@ -78,6 +78,40 @@ spec:
             params:
               - name: eaasSpaceSecretRef
                 value: $(tasks.provision-eaas-space.results.secretRef)
+          - name: log-supported-versions
+            image: $(params.image)
+            env:
+              - name: VERSIONS
+                value: "$(steps.get-supported-versions.results.versions)"
+            script: |
+              #!/usr/bin/env bash
+              echo "=========================================="
+              echo "📋 Supported OCP Versions from EaaS:"
+              echo "=========================================="
+              echo "Raw versions output: $VERSIONS"
+              echo "=========================================="
+              if [ -n "$VERSIONS" ]; then
+                # Try different separators: newline, comma, space
+                if echo "$VERSIONS" | grep -q ','; then
+                  # Comma-separated
+                  echo "$VERSIONS" | tr ',' '\n' | while read version; do
+                    [ -n "$version" ] && echo "  ✓ $version"
+                  done
+                elif echo "$VERSIONS" | grep -q $'\n'; then
+                  # Newline-separated
+                  echo "$VERSIONS" | while read version; do
+                    [ -n "$version" ] && echo "  ✓ $version"
+                  done
+                else
+                  # Single value or space-separated
+                  for version in $VERSIONS; do
+                    [ -n "$version" ] && echo "  ✓ $version"
+                  done
+                fi
+              else
+                echo "  ⚠️  No versions found"
+              fi
+              echo "=========================================="
           - name: pick-version
             ref:
               resolver: git
@@ -91,6 +125,20 @@ spec:
             params:
               - name: prefix
                 value: "$(steps.get-supported-versions.results.versions[0])."
+          - name: log-selected-version
+            image: $(params.image)
+            env:
+              - name: SELECTED_VERSION
+                value: "$(steps.pick-version.results.version)"
+            script: |
+              #!/usr/bin/env bash
+              echo "=========================================="
+              echo "🎯 Selected OCP Version for Testing:"
+              echo "=========================================="
+              echo "  Version: $SELECTED_VERSION"
+              echo "=========================================="
+              echo "This cluster will be provisioned with OCP $SELECTED_VERSION"
+              echo "=========================================="
           - name: create-cluster
             ref:
               resolver: git
